@@ -19,11 +19,31 @@ A real-time hand gesture recognition prototype built using Python, OpenCV, Media
 
 ## Setup & Installation
 
-1. Create a clean Python environment (Python 3.10+ recommended)
-2. Install the necessary dependencies:
+1. **Prerequisites**: Python 3.10 – 3.12 recommended (MediaPipe may not support newer Python versions yet).
+
+2. **Clone the repository**:
+   ```bash
+   git clone https://github.com/<your-username>/Hand-Gesture-Recognition.git
+   cd Hand-Gesture-Recognition
+   ```
+
+3. **Create a virtual environment** (recommended):
+   ```bash
+   # Windows
+   python -m venv venv
+   venv\Scripts\activate
+
+   # macOS / Linux
+   python3 -m venv venv
+   source venv/bin/activate
+   ```
+
+4. **Install dependencies**:
    ```bash
    pip install -r requirements.txt
    ```
+
+> **Note**: The `hand_landmarker.task` MediaPipe model file is included in the `models/` directory. No additional downloads are needed.
 
 ## Usage
 

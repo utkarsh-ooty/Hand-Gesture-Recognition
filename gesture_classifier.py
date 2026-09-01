@@ -3,7 +3,10 @@ import os
 import numpy as np
 
 class GestureClassifier:
-    def __init__(self, model_path='models/rf_model.pkl', confidence_threshold=0.6):
+    def __init__(self, model_path=None, confidence_threshold=0.6):
+        if model_path is None:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            model_path = os.path.join(base_dir, 'models', 'rf_model.pkl')
         self.model_path = model_path
         self.confidence_threshold = confidence_threshold
         self.model = None

@@ -1,13 +1,26 @@
 import os
-import ctypes
-try:
-    kernel32 = ctypes.windll.kernel32
-    buf = ctypes.create_unicode_buffer(1024)
-    kernel32.GetShortPathNameW(os.getcwd(), buf, 1024)
-    if buf.value:
-        os.chdir(buf.value)
-except Exception:
-    pass
+import sys
+import platform
+
+# Set working directory to the directory where this script resides
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if platform.system() == "Windows":
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        buf = ctypes.create_unicode_buffer(1024)
+        kernel32.GetShortPathNameW(SCRIPT_DIR, buf, 1024)
+        if buf.value:
+            os.chdir(buf.value)
+        else:
+            os.chdir(SCRIPT_DIR)
+    except Exception:
+        os.chdir(SCRIPT_DIR)
+else:
+    os.chdir(SCRIPT_DIR)
+
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
 
 import tkinter as tk
 from tkinter import ttk, messagebox

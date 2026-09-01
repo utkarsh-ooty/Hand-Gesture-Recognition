@@ -1,3 +1,5 @@
+import os
+import platform
 import cv2
 import mediapipe as mp
 from mediapipe.tasks import python
@@ -14,9 +16,25 @@ HAND_CONNECTIONS = [
 ]
 
 class HandTracker:
-    def __init__(self, max_hands=1, min_detection_confidence=0.5, min_tracking_confidence=0.5):
+    def __init__(self, model_path=None, max_hands=1, min_detection_confidence=0.5, min_tracking_confidence=0.5):
+        if model_path is None:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            model_path = os.path.join(base_dir, 'models', 'hand_landmarker.task')
+
+        # Convert to Windows short path if possible to prevent path issues in C++ backend
+        if platform.system() == "Windows":
+            try:
+                import ctypes
+                kernel32 = ctypes.windll.kernel32
+                buf = ctypes.create_unicode_buffer(1024)
+                kernel32.GetShortPathNameW(model_path, buf, 1024)
+                if buf.value:
+                    model_path = buf.value
+            except Exception:
+                pass
+
         # Setup modern Tasks API for MediaPipe > 0.10.x
-        base_options = python.BaseOptions(model_asset_path='models/hand_landmarker.task')
+        base_options = python.BaseOptions(model_asset_path=model_path)
         options = vision.HandLandmarkerOptions(
             base_options=base_options,
             num_hands=max_hands,

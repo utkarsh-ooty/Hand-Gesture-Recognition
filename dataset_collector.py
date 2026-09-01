@@ -4,7 +4,10 @@ import pandas as pd
 import time
 
 class DatasetCollector:
-    def __init__(self, dataset_dir="dataset"):
+    def __init__(self, dataset_dir=None):
+        if dataset_dir is None:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            dataset_dir = os.path.join(base_dir, "dataset")
         self.dataset_dir = dataset_dir
         self.csv_path = os.path.join(dataset_dir, "keypoint_dataset.csv")
         self.ensure_dirs()

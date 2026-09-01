@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Project-specific: User-generated data (recreated per-user via the app)
+dataset/
+!dataset/.gitkeep
+
+# Project-specific: Trained model outputs (user trains their own)
+models/rf_model.pkl
+models/confusion_matrix.png

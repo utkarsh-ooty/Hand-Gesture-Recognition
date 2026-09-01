@@ -7,7 +7,13 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, confusion_matrix
 import matplotlib.pyplot as plt
 
-def train_gesture_model(dataset_path="dataset/keypoint_dataset.csv", model_save_path="models/rf_model.pkl"):
+def train_gesture_model(dataset_path=None, model_save_path=None):
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    if dataset_path is None:
+        dataset_path = os.path.join(base_dir, "dataset", "keypoint_dataset.csv")
+    if model_save_path is None:
+        model_save_path = os.path.join(base_dir, "models", "rf_model.pkl")
+
     if not os.path.exists(dataset_path):
         print(f"Error: Dataset {dataset_path} not found.")
         return False
@@ -65,9 +71,10 @@ def train_gesture_model(dataset_path="dataset/keypoint_dataset.csv", model_save_
     plt.xlabel('Predicted label')
     
     os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
-    plt.savefig("models/confusion_matrix.png")
+    cm_path = os.path.join(os.path.dirname(model_save_path), "confusion_matrix.png")
+    plt.savefig(cm_path)
     
-    print("\nConfusion matrix plot saved to models/confusion_matrix.png")
+    print(f"\nConfusion matrix plot saved to {cm_path}")
     
     # Save the trained model
     joblib.dump(rf, model_save_path)
