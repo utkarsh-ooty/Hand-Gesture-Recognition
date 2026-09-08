@@ -16,21 +16,27 @@ class CommandEngine:
         # Dataset Collection state
         self.dataset_gesture_index = 0
         
+        # GUI debug variables
+        self.last_spoken_text = ""
+        self.last_intent = ""
+        
     def say(self, message: str):
+        self.last_spoken_text = message
         self.tts.speak(message)
 
     def process_intent(self, intent: str, payload: str = None):
         """Processes intents (NEXT, PREV, SELECT, BACK, HOME, HELP) across different states."""
+        self.last_intent = intent
         state = self.state_manager.get_state()
         print(f"[CommandEngine] Processing Intent: {intent} at State: {state}")
         
         if intent == "HOME":
             if state != ApplicationState.MAIN_MENU:
-                self.say("Returning to main menu.")
+                self.say("Navigating home.")
                 self.state_manager.set_state(ApplicationState.MAIN_MENU)
-                self.say(f"Main menu. {self.main_menu_items[self.main_menu_index]} is selected.")
+                self.say(f"You have returned to the main menu. I'll guide you through the options.")
             else:
-                self.say(f"You are already at the main menu. {self.main_menu_items[self.main_menu_index]} is selected. Show one finger to move next, or three fingers to select.")
+                self.say(f"You are already at the main menu. You can show one finger to scroll options, or show three fingers to select.")
             return
 
         if intent == "HELP":
@@ -41,20 +47,20 @@ class CommandEngine:
             # First interaction moves us to the main menu
             self.state_manager.set_state(ApplicationState.MAIN_MENU)
             self.main_menu_index = 0
-            self.say("Main menu. Dataset Collection, Training Model, Recognition, Settings, Help, and Exit are available. Use the configured hand gestures to navigate and select an option.")
+            self.say("I can see your hand. You're now at the main menu. I'll guide you through the available options.")
             return
             
         elif state == ApplicationState.MAIN_MENU:
             if intent == "NEXT":
                 self.main_menu_index = (self.main_menu_index + 1) % len(self.main_menu_items)
-                self.say(f"{self.main_menu_items[self.main_menu_index]} selected.")
+                self._announce_menu_option()
             elif intent == "PREV":
                 self.main_menu_index = (self.main_menu_index - 1) % len(self.main_menu_items)
-                self.say(f"{self.main_menu_items[self.main_menu_index]} selected.")
+                self._announce_menu_option()
             elif intent == "SELECT":
                 self._execute_main_menu_selection()
             elif intent == "BACK":
-                self.say("You are already at the main menu.")
+                self.say("You are already at the main menu. Show three fingers to select an option, or swipe to browse.")
                 
         elif state == ApplicationState.DATASET_MENU:
             if intent == "BACK":
@@ -77,14 +83,14 @@ class CommandEngine:
         elif state == ApplicationState.TRAINING_CONFIRMATION:
             if intent == "SELECT":
                 self.state_manager.set_state(ApplicationState.TRAINING)
-                self.say("Training has started. Please wait.")
+                self.say("I'm starting model training. Please wait.")
                 success = self.app_callbacks.get("train_model")()
                 if success:
                     self.state_manager.set_state(ApplicationState.MODEL_READY)
-                    self.say("Training completed successfully. Gesture recognition is ready.")
+                    self.say("Training is complete. Your model has been saved successfully.")
                 else:
                     self.state_manager.set_state(ApplicationState.MAIN_MENU)
-                    self.say("Training failed. Please check the collected samples in Dataset Collection.")
+                    self.say("I wasn't able to complete the training. Please check that you have collected enough gesture samples and try again.")
             elif intent == "BACK":
                 self.state_manager.set_state(ApplicationState.MAIN_MENU)
                 self.say("Training cancelled. Returning to main menu.")
@@ -110,16 +116,31 @@ class CommandEngine:
                 self.state_manager.set_state(ApplicationState.MAIN_MENU)
                 self.say("Recognition stopped. Returned to main menu.")
 
+    def _announce_menu_option(self):
+        selection = self.main_menu_items[self.main_menu_index]
+        if selection == "Dataset Collection":
+            self.say("You've selected Dataset Collection. Use the select gesture to open it.")
+        elif selection == "Model Training":
+            self.say("You've selected Model Training. This option will train the gesture recognition model using your collected data.")
+        elif selection == "Recognition":
+            self.say("You've selected Gesture Recognition. This will allow you to control the application using recognized hand gestures.")
+        elif selection == "Help":
+            self.say("You've selected Help. I'll explain how the gestures work.")
+        elif selection == "Exit":
+            self.say("You've selected Exit. Use the select gesture to close the application.")
+        else:
+            self.say(f"You've selected {selection}. Use the select gesture to confirm.")
+
     def _execute_main_menu_selection(self, override=None):
         selection = override if override else self.main_menu_items[self.main_menu_index]
         
         if selection == "Dataset Collection":
             self.state_manager.set_state(ApplicationState.DATASET_MENU)
-            self.say("Opening Dataset Collection. Dataset collection opened. Show three fingers to start the sequence, or a closed fist to cancel.")
+            self.say("You're now in Dataset Collection. Show three fingers to begin recording, or a closed fist to cancel.")
             
         elif selection == "Model Training":
             self.state_manager.set_state(ApplicationState.TRAINING_CONFIRMATION)
-            self.say("Opening Training Model. Show three fingers to confirm or make a fist to cancel.")
+            self.say("I'm opening Model Training. Show three fingers to confirm training or make a fist to cancel.")
             
         elif selection == "Recognition":
             if not self.app_callbacks.get("is_model_trained")():
@@ -127,7 +148,7 @@ class CommandEngine:
                 return
             self.state_manager.set_state(ApplicationState.RECOGNITION)
             self.app_callbacks.get("start_recognition")()
-            self.say("Gesture Recognition mode is active. Please perform a gesture.")
+            self.say("Gesture recognition is now active. You can control the application using your hand.")
             
         elif selection == "Settings":
             self.say("Settings are currently unavailable in this prototype.")
@@ -142,7 +163,7 @@ class CommandEngine:
     def _start_collecting_gesture(self):
         gesture_name = GESTURES[self.dataset_gesture_index]
         pretty = gesture_name.replace('_', ' ').title()
-        self.say(f"Gesture {self.dataset_gesture_index + 1} of {len(GESTURES)}: {pretty}. Please show the gesture you want to record.")
+        self.say(f"Please chose the gesture you want to record. {pretty} is queued. Please hold the gesture clearly in front of the camera.")
         self.app_callbacks.get("select_gesture")(gesture_name)
         # The main.py update_loop should detect when it becomes stable and start collecting,
         # OR we could just start recording and naturally collect 50 frames.
@@ -155,7 +176,7 @@ class CommandEngine:
             
         gesture_name = GESTURES[self.dataset_gesture_index]
         pretty = gesture_name.replace('_', ' ').title()
-        self.say(f"{pretty} samples completed.")
+        self.say(f"Recording is complete. Your {pretty} gesture samples have been saved.")
         
         self.dataset_gesture_index += 1
         if self.dataset_gesture_index < len(GESTURES):
@@ -163,7 +184,7 @@ class CommandEngine:
         else:
             self.dataset_gesture_index = 0
             self.state_manager.set_state(ApplicationState.MAIN_MENU)
-            self.say("Dataset collection complete. All required gesture samples have been collected. Returning to main menu.")
+            self.say("Dataset collection is fully complete. All required gesture samples have been saved. Returning to main menu.")
 
     def _handle_help(self, state: ApplicationState):
         if state == ApplicationState.MAIN_MENU:

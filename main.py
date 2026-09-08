@@ -106,10 +106,10 @@ class HandGestureApp:
         }
         
     def start_accessibility_mode(self):
-        self.command_engine.say("Welcome to Hand Gesture AI. Accessibility mode is active.")
+        self.command_engine.say("Welcome to Hand Gesture AI. This application allows you to control the interface using simple hand gestures, without needing a mouse or keyboard. Accessibility mode is now active, so I'll guide you through the application using voice instructions.")
         self.state_manager.set_state(ApplicationState.WAITING_FOR_HAND)
         self.start_camera_logic()
-        self.command_engine.say("Camera is active. Please show your hand clearly in front of the camera.")
+        self.command_engine.say("Your camera is now starting. Please place your hand clearly in front of the camera.")
         self.last_startup_voice_time = time.time()
         
     def on_intent(self, intent, payload=None):
@@ -124,40 +124,60 @@ class HandGestureApp:
         self.video_label = tk.Label(self.video_frame)
         self.video_label.pack()
         
-        # Right Panel (Controls - purely for dev debugging)
-        self.control_frame = tk.Frame(self.root)
-        self.control_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=10)
+        # Right Panel (Combined Legacy + Developer Debug)
+        self.control_frame = tk.Frame(self.root, padx=10, pady=10)
+        self.control_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
         
-        tk.Label(self.control_frame, text="ACCESSIBILITY MODE: ON", font=("Arial", 16, "bold"), fg="purple").pack(pady=10)
+        # --- LEGACY CONTROLS ---
+        legacy_frame = tk.Frame(self.control_frame)
+        legacy_frame.pack(fill=tk.X)
         
-        # Status Label
-        self.status_label = tk.Label(self.control_frame, text="Status: Init", font=("Arial", 11), fg="blue")
-        self.status_label.pack(pady=5)
+        self.status_label = tk.Label(legacy_frame, text="Status: Init", font=("Arial", 11), fg="blue")
+        self.status_label.pack(pady=2)
         
-        self.finger_lbl = tk.Label(self.control_frame, text="Fingers: 0", font=("Arial", 11))
-        self.finger_lbl.pack()
+        cam_frame = tk.LabelFrame(legacy_frame, text="Camera Controls")
+        cam_frame.pack(fill=tk.X, pady=2)
+        tk.Button(cam_frame, text="Start Camera", command=self.start_camera_logic).pack(side=tk.LEFT, padx=5, pady=2, expand=True)
+        tk.Button(cam_frame, text="Stop Camera", command=self.stop_camera_logic).pack(side=tk.LEFT, padx=5, pady=2, expand=True)
         
-        # Camera Controls
-        cam_frame = tk.LabelFrame(self.control_frame, text="Camera Controls")
-        cam_frame.pack(fill=tk.X, pady=5)
-        tk.Button(cam_frame, text="Start Camera", command=self.start_camera_logic).pack(side=tk.LEFT, padx=5, pady=5, expand=True)
-        tk.Button(cam_frame, text="Stop Camera", command=self.stop_camera_logic).pack(side=tk.LEFT, padx=5, pady=5, expand=True)
-        
-        # Dataset Collection
-        dataset_frame = tk.LabelFrame(self.control_frame, text="Dataset Collection (Debug)")
-        dataset_frame.pack(fill=tk.X, pady=5)
-        
+        dataset_frame = tk.LabelFrame(legacy_frame, text="Dataset Collection (Debug)")
+        dataset_frame.pack(fill=tk.X, pady=2)
         self.gesture_class_var = tk.StringVar(value=GESTURES[0])
         self.gesture_cb = ttk.Combobox(dataset_frame, textvariable=self.gesture_class_var, values=GESTURES, state="readonly")
-        self.gesture_cb.pack(pady=5)
+        self.gesture_cb.pack(pady=2)
         
-        # Inference Feedback
-        self.inference_frame = tk.LabelFrame(self.control_frame, text="Inference Feedback")
-        self.inference_frame.pack(fill=tk.BOTH, expand=True, pady=10)
-        self.gesture_lbl = tk.Label(self.inference_frame, text="Detected Gesture: None", font=("Arial", 12))
-        self.gesture_lbl.pack(anchor="w")
-        self.conf_lbl = tk.Label(self.inference_frame, text="Confidence: 0%", font=("Arial", 12))
-        self.conf_lbl.pack(anchor="w")
+        # --- NEW DEVELOPER DEBUG PANEL ---
+        debug_frame = tk.Frame(self.control_frame, bg="#2d2d2d", padx=10, pady=10)
+        debug_frame.pack(fill=tk.BOTH, expand=True, pady=10)
+        
+        tk.Label(debug_frame, text="DEVELOPER DEBUG: ON", font=("Consolas", 14, "bold"), fg="#ff4444", bg="#2d2d2d").pack(pady=(0, 10))
+        tk.Label(debug_frame, text="ACCESSIBILITY MODE: ON", font=("Consolas", 12), fg="purple", bg="#2d2d2d").pack()
+        
+        self.state_lbl = tk.Label(debug_frame, text="Current State: STARTUP", font=("Consolas", 12), fg="white", bg="#2d2d2d")
+        self.state_lbl.pack(anchor="w", pady=2)
+        
+        self.sel_lbl = tk.Label(debug_frame, text="Selection: None", font=("Consolas", 12), fg="#aaaaaa", bg="#2d2d2d")
+        self.sel_lbl.pack(anchor="w", pady=2)
+            
+        tk.Frame(debug_frame, height=1, bg="#555555").pack(fill=tk.X, pady=5)
+            
+        self.fin_lbl = tk.Label(debug_frame, text="Fingers: 0", font=("Consolas", 12), fg="#88ff88", bg="#2d2d2d")
+        self.fin_lbl.pack(anchor="w")
+        self.hand_lbl = tk.Label(debug_frame, text="Hand: DETECTED", font=("Consolas", 12), fg="#88ff88", bg="#2d2d2d")
+        self.hand_lbl.pack(anchor="w")
+        self.gest_lbl = tk.Label(debug_frame, text="Gesture: None", font=("Consolas", 12), fg="#88ff88", bg="#2d2d2d")
+        self.gest_lbl.pack(anchor="w")
+        
+        tk.Frame(debug_frame, height=1, bg="#555555").pack(fill=tk.X, pady=5)
+        
+        self.cmd_lbl = tk.Label(debug_frame, text="Last Command: None", font=("Consolas", 12), fg="#ffaa00", bg="#2d2d2d")
+        self.cmd_lbl.pack(anchor="w", pady=2)
+        
+        self.tts_lbl = tk.Label(debug_frame, text="🔊 \"\"", font=("Consolas", 11, "italic"), fg="#aaaaff", bg="#2d2d2d", wraplength=280, justify="left")
+        self.tts_lbl.pack(anchor="w")
+
+        tk.Button(debug_frame, text="Test Voice", bg="#444466", fg="white", font=("Consolas", 10, "bold"), command=lambda: self.command_engine.say("Hello. This is the Hand Gesture AI voice assistant. I'm using the Neerja neural voice to guide you through the application.")).pack(fill=tk.X, pady=(15, 0))
+
         
     def start_camera_logic(self):
         try:
@@ -215,15 +235,11 @@ class HandGestureApp:
         
     def stop_recognition_logic(self):
         self.is_recognizing = False
-        self.gesture_lbl.config(text="Detected Gesture: None")
-        self.conf_lbl.config(text="Confidence: 0%")
             
     def reload_model_logic(self):
         self.classifier.load_model()
 
     def update_loop(self):
-        self.status_label.config(text=f"State: {self.state_manager.get_state().value}")
-        
         if self.is_camera_running:
             frame = self.camera.read_frame()
             if frame is not None:
@@ -231,8 +247,9 @@ class HandGestureApp:
                 processed_frame = self.tracker.find_hands(frame.copy(), draw=True)
                 
                 # Default states
-                current_gesture = "No Hand Detected"
+                current_gesture = "NONE"
                 current_conf = 0.0
+                finger_count = 0
                 
                 # Check for swipe clear
                 if time.time() - self.display_swipe_time > 1.5:
@@ -262,7 +279,7 @@ class HandGestureApp:
                     
                     if current_state == ApplicationState.WAITING_FOR_HAND:
                         if time.time() - self.last_startup_voice_time > 6.0:
-                            self.command_engine.say("No hand detected. Please show your hand in front of the camera.")
+                            self.command_engine.say("I cannot see your hand. Please move your hand into the camera view.")
                             self.last_startup_voice_time = time.time()
 
                 else:
@@ -294,7 +311,8 @@ class HandGestureApp:
                         finger_details = {'thumb': 0, 'index': 0, 'middle': 0, 'ring': 0, 'pinky': 0}
                         
                     details_str = f"T:{finger_details['thumb']} I:{finger_details['index']} M:{finger_details['middle']} R:{finger_details['ring']} P:{finger_details['pinky']}"
-                    self.finger_lbl.config(text=f"Fingers: {finger_count}\n{hand_category} ({hand_score:.2f})\n{details_str}")
+                    # Just update the new fin_lbl with comprehensive details directly when hands are seen
+                    self.fin_lbl.config(text=f"Fingers: {finger_count} | {details_str}")
                     cv2.putText(processed_frame, f"Hands: 1 | Detected: YES", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
                     
                     if current_state in (ApplicationState.STARTUP, ApplicationState.WAITING_FOR_HAND):
@@ -315,7 +333,7 @@ class HandGestureApp:
                             self.collector.record(frame, features)
                             current_gesture = f"Recording {current_gest}: {self.collector.frame_counter}/50"
                             if self.collector.frame_counter == 1:
-                                self.command_engine.say("Sample recorded.")
+                                self.command_engine.say("Recording has started. Your samples are being collected.")
                             elif self.collector.frame_counter == 25:
                                 self.command_engine.say("25 samples recorded.")
                             elif self.collector.frame_counter == 50:
@@ -378,9 +396,36 @@ class HandGestureApp:
                             cv2.putText(processed_frame, f"{current_gesture} ({current_conf:.2f})", 
                                         (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 255), 3)
 
-                # Update UI inference labels
-                self.gesture_lbl.config(text=f"Detected Gesture: {current_gesture}")
-                self.conf_lbl.config(text=f"Confidence: {current_conf*100:.1f}%")
+                # Update UI Debug Labels
+                self.state_lbl.config(text=f"Current State: {current_state.value}")
+                
+                # Update visual menu selection (compact)
+                if current_state == ApplicationState.MAIN_MENU:
+                    sel = self.command_engine.main_menu_items[self.command_engine.main_menu_index]
+                elif current_state == ApplicationState.DATASET_COLLECTING:
+                    sel = GESTURES[self.command_engine.dataset_gesture_index]
+                elif current_state == ApplicationState.DATASET_MENU:
+                    sel = "Awaiting dataset confirmation"
+                elif current_state == ApplicationState.RECOGNITION:
+                    sel = "In Recognition Mode"
+                elif current_state == ApplicationState.TRAINING:
+                    sel = "Training Model..."
+                elif current_state == ApplicationState.WAITING_FOR_HAND:
+                    sel = "Waiting for hand"
+                else:
+                    sel = "None"
+                    
+                self.sel_lbl.config(text=f"Selection: {sel}")
+                
+                self.gest_lbl.config(text=f"Detected Gesture: {current_gesture.replace('_', ' ').upper()} ({current_conf*100:.1f}%)")
+                self.hand_lbl.config(text=f"Hand: {'YES' if self.hand_present else 'NO'}", fg="#88ff88" if self.hand_present else "#ff4444")
+                
+                # Finger string includes detail info if we want, but old fin_lbl got deleted, so let's check
+                # Actually, wait, finger_count could be a tuple or None if hand_present is False, but we fixed finger_count=0 
+                self.fin_lbl.config(text=f"Fingers: {finger_count}")
+                
+                self.cmd_lbl.config(text=f"Last Command: {self.command_engine.last_intent}")
+                self.tts_lbl.config(text=f"🔊 \"{self.command_engine.last_spoken_text}\"")
                 
                 # Render to Tkinter
                 img_rgb = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
