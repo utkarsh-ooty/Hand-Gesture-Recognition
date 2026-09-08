@@ -1,6 +1,7 @@
-import pyttsx3
 import threading
 import queue
+import time
+import platform
 
 class VoiceAssistant:
     def __init__(self):
@@ -9,28 +10,28 @@ class VoiceAssistant:
         self.worker_thread.start()
 
     def _speech_worker(self):
-        # We initialize pyttsx3 ONCE inside the dedicated thread to avoid 
-        # COM thread apartment issues on Windows and SAPI5 deadlocks.
         try:
-            import pythoncom
-            pythoncom.CoInitialize()
+            if platform.system() == "Windows":
+                import pythoncom
+                pythoncom.CoInitialize()
         except ImportError:
             pass
             
         try:
-            engine = pyttsx3.init()
-            engine.setProperty('rate', 170)
-            engine.setProperty('volume', 1.0)
+            import win32com.client
+            speaker = win32com.client.Dispatch("SAPI.SpVoice")
             
             while True:
                 text = self.speech_queue.get()
                 if text is None: # Sentinel
                     break
                 try:
-                    engine.say(text)
-                    engine.runAndWait()
+                    speaker.Speak(text)
                 except Exception as eval_e:
                     print(f"TTS saying error: {eval_e}")
+                    
+        except ImportError:
+            print("win32com is not available. Please install pywin32 to use TTS on Windows.")
         except Exception as e:
             print(f"TTS Engine Init Error: {e}")
 
@@ -39,5 +40,9 @@ class VoiceAssistant:
         self.speech_queue.put(text)
 
     def stop_speaking(self):
-        # Difficult to stop an in-progress SAPI5 speech cleanly across threads.
-        pass
+        # Clear the queue to prevent backlogs
+        while not self.speech_queue.empty():
+            try:
+                self.speech_queue.get_nowait()
+            except queue.Empty:
+                break

@@ -71,10 +71,14 @@ class HandGestureApp:
         self.is_recognizing = False
         self.display_swipe = None
         self.display_swipe_time = 0
-        self.last_no_hand_time = 0
-        self.warned_no_hand = False
+        self.hand_present = False
+        self.hand_lost_time = 0
+        self.last_no_hand_speech_time = 0
         self.hand_frames = 0
         self.last_startup_voice_time = time.time()
+        
+        self.last_ml_gesture = None
+        self.ml_gesture_frames = 0
         
         # Build UI
         self._build_ui()
@@ -178,7 +182,7 @@ class HandGestureApp:
             
     def train_model_logic(self):
         self.status_label.config(text="Status: Training Model...", fg="orange")
-        success = train_gesture_model()
+        success = train_gesture_model(message_callback=self.command_engine.say)
         if success:
             self.classifier.load_model()
         self.root.after(0, lambda: self.status_label.config(text="Status: Ready", fg="blue"))
@@ -243,14 +247,18 @@ class HandGestureApp:
                 if not landmarks:
                     self.navigation_manager.process_finger_count(None)
                     self.hand_frames = 0
-                    if not self.warned_no_hand:
-                        if self.last_no_hand_time == 0:
-                            self.last_no_hand_time = time.time()
-                        elif time.time() - self.last_no_hand_time > 3.0:
-                            # Only warn after startup flow is completed
+                    
+                    if self.hand_present or self.hand_lost_time == 0:
+                        self.hand_present = False
+                        self.hand_lost_time = time.time()
+                        
+                    time_lost = time.time() - self.hand_lost_time
+                    
+                    if time_lost > 3.0:
+                        if time.time() - self.last_no_hand_speech_time > 8.0:
                             if current_state != ApplicationState.STARTUP and current_state != ApplicationState.WAITING_FOR_HAND:
                                 self.command_engine.say("No hand detected. Please show your hand in front of the camera.")
-                            self.warned_no_hand = True
+                            self.last_no_hand_speech_time = time.time()
                     
                     if current_state == ApplicationState.WAITING_FOR_HAND:
                         if time.time() - self.last_startup_voice_time > 6.0:
@@ -258,8 +266,13 @@ class HandGestureApp:
                             self.last_startup_voice_time = time.time()
 
                 else:
-                    self.warned_no_hand = False
-                    self.last_no_hand_time = 0
+                    if not self.hand_present:
+                        self.hand_present = True
+                        if time.time() - self.hand_lost_time > 3.0 and self.hand_lost_time != 0:
+                            if current_state != ApplicationState.STARTUP and current_state != ApplicationState.WAITING_FOR_HAND:
+                                self.command_engine.say("Hand detected successfully. Accessibility navigation is ready.")
+                        self.hand_lost_time = 0
+                        self.last_no_hand_speech_time = 0
                     
                     if current_state == ApplicationState.WAITING_FOR_HAND:
                         self.hand_frames += 1
@@ -301,7 +314,11 @@ class HandGestureApp:
                         if self.collector.is_recording:
                             self.collector.record(frame, features)
                             current_gesture = f"Recording {current_gest}: {self.collector.frame_counter}/50"
-                            if self.collector.frame_counter >= 50:
+                            if self.collector.frame_counter == 1:
+                                self.command_engine.say("Sample recorded.")
+                            elif self.collector.frame_counter == 25:
+                                self.command_engine.say("25 samples recorded.")
+                            elif self.collector.frame_counter == 50:
                                 self.collector.stop_recording()
                                 self.command_engine.advance_dataset_collection()
                             
@@ -343,10 +360,20 @@ class HandGestureApp:
 
                             # Route static classification to command intent mapped if confidence > 0.8
                             if current_conf > 0.85:
-                                if current_gesture == "thumbs_up":
-                                    # Debouncing logic applies to ML too, NavigationManager processes all intents cleanly.
-                                    # Wait, NavigationManager expects ints. 
-                                    pass
+                                if current_gesture != self.last_ml_gesture:
+                                    self.ml_gesture_frames = 0
+                                    self.last_ml_gesture = current_gesture
+                                else:
+                                    self.ml_gesture_frames += 1
+                                    if self.ml_gesture_frames == 12:
+                                        pretty_gest = current_gesture.replace('_', ' ').title()
+                                        self.command_engine.say(f"{pretty_gest} recognized.")
+                                        
+                                        if current_gesture == "closed_fist":
+                                            self.on_intent("BACK")
+                            else:
+                                self.ml_gesture_frames = 0
+                                self.last_ml_gesture = None
 
                             cv2.putText(processed_frame, f"{current_gesture} ({current_conf:.2f})", 
                                         (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 255), 3)

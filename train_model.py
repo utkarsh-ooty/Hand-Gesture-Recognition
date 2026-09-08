@@ -7,7 +7,12 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, confusion_matrix
 import matplotlib.pyplot as plt
 
-def train_gesture_model(dataset_path=None, model_save_path=None):
+def train_gesture_model(dataset_path=None, model_save_path=None, message_callback=None):
+    def say(msg):
+        if message_callback:
+            message_callback(msg)
+        print(msg)
+
     base_dir = os.path.dirname(os.path.abspath(__file__))
     if dataset_path is None:
         dataset_path = os.path.join(base_dir, "dataset", "keypoint_dataset.csv")
@@ -15,18 +20,18 @@ def train_gesture_model(dataset_path=None, model_save_path=None):
         model_save_path = os.path.join(base_dir, "models", "rf_model.pkl")
 
     if not os.path.exists(dataset_path):
-        print(f"Error: Dataset {dataset_path} not found.")
+        say(f"Error. Dataset not found.")
         return False
         
-    print("Loading dataset...")
+    say("Dataset loading.")
     try:
         df = pd.read_csv(dataset_path)
     except Exception as e:
-        print(f"Could not read dataset: {e}")
+        say(f"Could not read dataset.")
         return False
         
     if len(df) == 0:
-        print("Dataset is empty.")
+        say("Dataset is empty. Please collect gesture samples first.")
         return False
         
     print(f"Dataset shape: {df.shape}")
@@ -40,7 +45,7 @@ def train_gesture_model(dataset_path=None, model_save_path=None):
     X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
     
     print(f"Training on {len(X_train)} samples, validating on {len(X_val)} samples.")
-    print("Model selected: Random Forest Classifier")
+    say("Training started. Please wait.")
     
     # Initialize and train the model
     rf = RandomForestClassifier(n_estimators=100, random_state=42)
@@ -49,7 +54,7 @@ def train_gesture_model(dataset_path=None, model_save_path=None):
     # Predict and evaluate
     y_pred = rf.predict(X_val)
     acc = accuracy_score(y_val, y_pred)
-    print(f"\n--- Validation Accuracy: {acc * 100:.2f}% ---")
+    say(f"Training completed. Validation accuracy is {acc * 100:.0f} percent.")
     
     cm = confusion_matrix(y_val, y_pred, labels=rf.classes_)
     print("\nConfusion Matrix:")
@@ -78,7 +83,7 @@ def train_gesture_model(dataset_path=None, model_save_path=None):
     
     # Save the trained model
     joblib.dump(rf, model_save_path)
-    print(f"Model successfully saved to {model_save_path}")
+    say(f"Model saved successfully.")
     
     return True
 

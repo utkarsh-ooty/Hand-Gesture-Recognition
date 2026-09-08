@@ -77,7 +77,7 @@ class CommandEngine:
         elif state == ApplicationState.TRAINING_CONFIRMATION:
             if intent == "SELECT":
                 self.state_manager.set_state(ApplicationState.TRAINING)
-                self.say("Training confirmed. Starting training. Please wait.")
+                self.say("Training has started. Please wait.")
                 success = self.app_callbacks.get("train_model")()
                 if success:
                     self.state_manager.set_state(ApplicationState.MODEL_READY)
@@ -87,7 +87,7 @@ class CommandEngine:
                     self.say("Training failed. Please check the collected samples in Dataset Collection.")
             elif intent == "BACK":
                 self.state_manager.set_state(ApplicationState.MAIN_MENU)
-                self.say("Training cancelled.")
+                self.say("Training cancelled. Returning to main menu.")
 
         elif state == ApplicationState.MODEL_READY:
             if intent == "SELECT":
@@ -115,11 +115,11 @@ class CommandEngine:
         
         if selection == "Dataset Collection":
             self.state_manager.set_state(ApplicationState.DATASET_MENU)
-            self.say("Dataset Collection opened. Show three fingers to start the sequence, or a closed fist to cancel.")
+            self.say("Opening Dataset Collection. Dataset collection opened. Show three fingers to start the sequence, or a closed fist to cancel.")
             
         elif selection == "Model Training":
             self.state_manager.set_state(ApplicationState.TRAINING_CONFIRMATION)
-            self.say("Model Training selected. Training will use the collected gesture samples. Show three fingers to confirm or make a fist to cancel.")
+            self.say("Opening Training Model. Show three fingers to confirm or make a fist to cancel.")
             
         elif selection == "Recognition":
             if not self.app_callbacks.get("is_model_trained")():
@@ -142,7 +142,7 @@ class CommandEngine:
     def _start_collecting_gesture(self):
         gesture_name = GESTURES[self.dataset_gesture_index]
         pretty = gesture_name.replace('_', ' ').title()
-        self.say(f"Gesture {self.dataset_gesture_index + 1} of 6: {pretty}. Please show the gesture you want to record.")
+        self.say(f"Gesture {self.dataset_gesture_index + 1} of {len(GESTURES)}: {pretty}. Please show the gesture you want to record.")
         self.app_callbacks.get("select_gesture")(gesture_name)
         # The main.py update_loop should detect when it becomes stable and start collecting,
         # OR we could just start recording and naturally collect 50 frames.
@@ -163,7 +163,7 @@ class CommandEngine:
         else:
             self.dataset_gesture_index = 0
             self.state_manager.set_state(ApplicationState.MAIN_MENU)
-            self.say("All required gesture samples have been collected. Model Training is ready.")
+            self.say("Dataset collection complete. All required gesture samples have been collected. Returning to main menu.")
 
     def _handle_help(self, state: ApplicationState):
         if state == ApplicationState.MAIN_MENU:
