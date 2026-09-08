@@ -87,6 +87,16 @@ class HandTracker:
                     landmark_list.append([id, lm.x, lm.y, lm.z])
                     
         return landmark_list
+
+    def get_handedness(self, hand_no=0):
+        """
+        Returns 'Right' or 'Left' and score for the specified hand.
+        """
+        if self.last_results and self.last_results.handedness:
+            if len(self.last_results.handedness) > hand_no:
+                category = self.last_results.handedness[hand_no][0]
+                return category.category_name, category.score
+        return None, 0.0
     
     def get_pixel_landmarks(self, frame, hand_no=0):
         """

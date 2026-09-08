@@ -19,8 +19,8 @@ class DatasetCollector:
         if not os.path.exists(self.dataset_dir):
             os.makedirs(self.dataset_dir)
             
-        classes = ["open_palm", "closed_fist", "thumbs_up", "thumbs_down", "swipe_left", "swipe_right"]
-        for c in classes:
+        from gesture_config import GESTURES
+        for c in GESTURES:
             c_dir = os.path.join(self.dataset_dir, c)
             if not os.path.exists(c_dir):
                 os.makedirs(c_dir)
