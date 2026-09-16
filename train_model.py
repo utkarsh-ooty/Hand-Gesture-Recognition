@@ -38,7 +38,7 @@ def train_gesture_model(dataset_path=None, model_save_path=None, message_callbac
     
     # We expect the first column to be the label (class name)
     # The remaining columns are features
-    y = df.iloc[:, 0].values
+    y = df.iloc[:, 0].to_numpy()
     X = df.iloc[:, 1:].values
     
     # Split the dataset

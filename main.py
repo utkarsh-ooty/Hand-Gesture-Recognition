@@ -2,6 +2,10 @@ import os
 import sys
 import platform
 
+# Suppress MediaPipe & TensorFlow C++ warning noise
+os.environ["GLOG_minloglevel"] = "2"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+
 # Set working directory to the directory where this script resides
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if platform.system() == "Windows":
@@ -41,6 +45,7 @@ from train_model import train_gesture_model
 from gesture_config import GESTURES
 from application_state import ApplicationState, StateManager
 from voice_assistant import VoiceAssistant
+from speech_controller import SpeechController
 from finger_detector import FingerDetector
 from navigation_manager import NavigationManager
 from command_engine import CommandEngine
@@ -48,8 +53,9 @@ from command_engine import CommandEngine
 class HandGestureApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Hand Gesture Recognition AI (Accessibility Mode Enabled)")
-        self.root.geometry("1000x600")
+        self.root.title("Hand Gesture & Voice Navigation AI")
+        self.root.geometry("1180x680")
+        self.root.minsize(1050, 620)
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         
         # ML / CV Modules
@@ -62,8 +68,11 @@ class HandGestureApp:
         # Accessibility & State Modules
         self.state_manager = StateManager()
         self.voice_assistant = VoiceAssistant()
+        self.speech_controller = SpeechController(self.on_intent, voice_assistant=self.voice_assistant)
         self.finger_detector = FingerDetector()
         self.navigation_manager = NavigationManager(self.on_intent, stability_frames=12, cooldown=2.0)
+        self.camera_ratio = 0.40  # Default: 40% camera, 60% commands & guide
+        self._last_root_w = 0
         self.command_engine = CommandEngine(self.state_manager, self.voice_assistant, self._build_callbacks())
         
         # State
@@ -102,6 +111,8 @@ class HandGestureApp:
             "start_recognition": self.start_recognition_logic,
             "stop_recognition": self.stop_recognition_logic,
             "reload_model": self.reload_model_logic,
+            "adjust_camera_size": lambda delta: self.set_camera_ratio(self.camera_ratio + delta),
+            "set_camera_ratio": self.set_camera_ratio,
             "close_app": self.on_close
         }
         
@@ -109,81 +120,281 @@ class HandGestureApp:
         self.command_engine.say("Welcome to Hand Gesture AI. This application allows you to control the interface using simple hand gestures, without needing a mouse or keyboard. Accessibility mode is now active, so I'll guide you through the application using voice instructions.")
         self.state_manager.set_state(ApplicationState.WAITING_FOR_HAND)
         self.start_camera_logic()
-        self.command_engine.say("Your camera is now starting. Please place your hand clearly in front of the camera.")
+        self.speech_controller.start_listening()
+        self.command_engine.say("Your camera is now starting. Voice commands and hand gestures are both active.")
         self.last_startup_voice_time = time.time()
         
     def on_intent(self, intent, payload=None):
-        """Callback from NavigationManager OR GestureClassifier (when running)."""
+        """Callback from NavigationManager, SpeechController, OR GestureClassifier."""
         self.command_engine.process_intent(intent, payload)
         
     def _build_ui(self):
-        # Left Panel (Video)
-        self.video_frame = tk.Frame(self.root, width=640, height=480, bg="black")
-        self.video_frame.pack(side=tk.LEFT, padx=10, pady=10)
+        # Configure root window dark theme
+        self.root.configure(bg="#11111b")
         
-        self.video_label = tk.Label(self.video_frame)
-        self.video_label.pack()
+        # Horizontal PanedWindow allowing split-divider dragging between camera and guidance
+        self.paned_window = tk.PanedWindow(
+            self.root,
+            orient=tk.HORIZONTAL,
+            bg="#11111b",
+            sashwidth=6,
+            sashrelief="flat",
+            sashpad=2
+        )
+        self.paned_window.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
+
+        # Left Panel (Camera Stream - Customizable 40% default width)
+        self.video_panel = tk.Frame(self.paned_window, bg="#11111b")
+        self.paned_window.add(self.video_panel, minsize=260)
         
-        # Right Panel (Combined Legacy + Developer Debug)
-        self.control_frame = tk.Frame(self.root, padx=10, pady=10)
-        self.control_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        cam_header = tk.Frame(self.video_panel, bg="#11111b")
+        cam_header.pack(fill=tk.X, pady=(0, 4))
+        tk.Label(cam_header, text="📷 Camera View", font=("Segoe UI", 11, "bold"), fg="#89b4fa", bg="#11111b").pack(side=tk.LEFT)
+        self.cam_live_badge = tk.Label(cam_header, text="● LIVE", font=("Segoe UI", 9, "bold"), fg="#a6e3a1", bg="#11111b")
+        self.cam_live_badge.pack(side=tk.RIGHT)
+
+        # Camera Width Customizer Bar (Presets + Smooth Slider)
+        size_bar = tk.Frame(self.video_panel, bg="#181825", padx=8, pady=4)
+        size_bar.pack(fill=tk.X, pady=(0, 8))
+        tk.Label(size_bar, text="📐 Width:", font=("Segoe UI", 9, "bold"), fg="#a6adc8", bg="#181825").pack(side=tk.LEFT, padx=(0, 6))
+
+        self.ratio_btn_30 = tk.Button(size_bar, text="30%", font=("Segoe UI", 8), bg="#313244", fg="#cdd6f4", relief="flat", padx=6, pady=1, cursor="hand2", command=lambda: self.set_camera_ratio(0.30))
+        self.ratio_btn_30.pack(side=tk.LEFT, padx=2)
+
+        self.ratio_btn_40 = tk.Button(size_bar, text="40%", font=("Segoe UI", 8, "bold"), bg="#89b4fa", fg="#11111b", relief="flat", padx=6, pady=1, cursor="hand2", command=lambda: self.set_camera_ratio(0.40))
+        self.ratio_btn_40.pack(side=tk.LEFT, padx=2)
+
+        self.ratio_btn_50 = tk.Button(size_bar, text="50%", font=("Segoe UI", 8), bg="#313244", fg="#cdd6f4", relief="flat", padx=6, pady=1, cursor="hand2", command=lambda: self.set_camera_ratio(0.50))
+        self.ratio_btn_50.pack(side=tk.LEFT, padx=2)
+
+        self.ratio_slider = tk.Scale(
+            size_bar,
+            from_=25, to=60,
+            orient=tk.HORIZONTAL,
+            showvalue=True,
+            bg="#181825", fg="#bac2de",
+            highlightthickness=0,
+            troughcolor="#313244",
+            activebackground="#89b4fa",
+            length=80,
+            command=self.on_slider_ratio
+        )
+        self.ratio_slider.set(40)
+        self.ratio_slider.pack(side=tk.RIGHT)
+        tk.Label(size_bar, text="Slide:", font=("Segoe UI", 8), fg="#6c7086", bg="#181825").pack(side=tk.RIGHT, padx=(4, 2))
         
-        # --- LEGACY CONTROLS ---
-        legacy_frame = tk.Frame(self.control_frame)
-        legacy_frame.pack(fill=tk.X)
+        self.video_frame = tk.Frame(self.video_panel, bg="#000000", bd=2, relief="groove")
+        self.video_frame.pack(fill=tk.X, pady=(0, 8))
         
-        self.status_label = tk.Label(legacy_frame, text="Status: Init", font=("Arial", 11), fg="blue")
-        self.status_label.pack(pady=2)
+        self.video_label = tk.Label(self.video_frame, bg="#000000")
+        self.video_label.pack(expand=True)
         
-        cam_frame = tk.LabelFrame(legacy_frame, text="Camera Controls")
-        cam_frame.pack(fill=tk.X, pady=2)
-        tk.Button(cam_frame, text="Start Camera", command=self.start_camera_logic).pack(side=tk.LEFT, padx=5, pady=2, expand=True)
-        tk.Button(cam_frame, text="Stop Camera", command=self.stop_camera_logic).pack(side=tk.LEFT, padx=5, pady=2, expand=True)
+        # Quick Camera Tip on Left Panel
+        cam_tip_frame = tk.Frame(self.video_panel, bg="#1e1e2e", padx=10, pady=8)
+        cam_tip_frame.pack(fill=tk.X, pady=(4, 0))
+        tk.Label(cam_tip_frame, text="💡 Camera Tip:", font=("Segoe UI", 9, "bold"), fg="#f9e2af", bg="#1e1e2e").pack(anchor="w")
+        self.cam_tip_text = tk.Label(
+            cam_tip_frame,
+            text="Hold hand 1-2 ft away. Spread fingers clearly. Drag divider or use buttons above to adjust view width.",
+            font=("Segoe UI", 8), fg="#bac2de", bg="#1e1e2e", wraplength=260, justify="left"
+        )
+        self.cam_tip_text.pack(anchor="w", pady=(2, 0))
+
+        # Right Panel (User Guidance & Controls - Takes 60% of Window)
+        self.control_frame = tk.Frame(self.paned_window, bg="#181825", padx=20, pady=15)
+        self.paned_window.add(self.control_frame, minsize=420)
         
-        dataset_frame = tk.LabelFrame(legacy_frame, text="Dataset Collection (Debug)")
-        dataset_frame.pack(fill=tk.X, pady=2)
+        # --- 1. APP HEADER ---
+        header_frame = tk.Frame(self.control_frame, bg="#181825")
+        header_frame.pack(fill=tk.X, pady=(0, 8))
+        
+        tk.Label(header_frame, text="✨ Hand Gesture & Voice Navigation AI", font=("Segoe UI", 16, "bold"), fg="#cdd6f4", bg="#181825").pack(side=tk.LEFT)
+        
+        # --- 2. FRIENDLY STATUS BANNER (No programmer jargon) ---
+        self.status_banner = tk.Label(
+            self.control_frame,
+            text="👋 Please hold your hand in front of the camera to begin",
+            font=("Segoe UI", 11, "bold"),
+            bg="#313244", fg="#f9e2af",
+            padx=14, pady=9, wraplength=460
+        )
+        self.status_banner.pack(fill=tk.X, pady=(0, 10))
+
+        # --- 3. INTERACTIVE VISUAL MENU (Shows users where they are) ---
+        menu_card = tk.LabelFrame(
+            self.control_frame,
+            text=" 📋 Menu Options ",
+            font=("Segoe UI", 10, "bold"),
+            fg="#89b4fa", bg="#1e1e2e",
+            padx=12, pady=8, bd=1
+        )
+        menu_card.pack(fill=tk.X, pady=(0, 10))
+        
+        self.menu_icons = {
+            "Dataset Collection": "📁",
+            "Model Training": "🧠",
+            "Recognition": "✨",
+            "Settings": "⚙️",
+            "Help": "❓",
+            "Exit": "🚪"
+        }
+        
+        self.menu_labels = {}
+        for item in self.command_engine.main_menu_items:
+            icon = self.menu_icons.get(item, "📌")
+            lbl = tk.Label(
+                menu_card,
+                text=f"  {icon}  {item}",
+                font=("Segoe UI", 10),
+                fg="#a6adc8", bg="#1e1e2e",
+                anchor="w", padx=12, pady=4
+            )
+            lbl.pack(fill=tk.X, pady=1)
+            self.menu_labels[item] = lbl
+
+        # --- 4. ACTION EXPLANATION CARD ("What will this do?") ---
+        action_card = tk.LabelFrame(
+            self.control_frame,
+            text=" 💡 What Does This Option Do? ",
+            font=("Segoe UI", 10, "bold"),
+            fg="#a6e3a1", bg="#1e1e2e",
+            padx=14, pady=10, bd=1
+        )
+        action_card.pack(fill=tk.X, pady=(0, 10))
+        
+        self.action_title_lbl = tk.Label(action_card, text="📁 Dataset Collection", font=("Segoe UI", 13, "bold"), fg="#89b4fa", bg="#1e1e2e")
+        self.action_title_lbl.pack(anchor="w", pady=(0, 2))
+        
+        self.action_desc_lbl = tk.Label(
+            action_card,
+            text="Records camera sample photos of your hand gestures so the AI learns how your hand looks.",
+            font=("Segoe UI", 10),
+            fg="#cdd6f4", bg="#1e1e2e",
+            wraplength=460, justify="left"
+        )
+        self.action_desc_lbl.pack(anchor="w", pady=(0, 6))
+        
+        self.action_trigger_lbl = tk.Label(
+            action_card,
+            text="👉 TO SELECT: Show 3 Fingers 🤟  OR  Say 'Select'",
+            font=("Segoe UI", 10, "bold"),
+            fg="#f9e2af", bg="#1e1e2e",
+            justify="left"
+        )
+        self.action_trigger_lbl.pack(anchor="w")
+
+        # --- 5. HOW TO CONTROL (Cheatsheet at a glance) ---
+        guide_card = tk.LabelFrame(
+            self.control_frame,
+            text=" 🎮 Quick Controls Guide ",
+            font=("Segoe UI", 10, "bold"),
+            fg="#cba6f7", bg="#1e1e2e",
+            padx=12, pady=8, bd=1
+        )
+        guide_card.pack(fill=tk.X, pady=(0, 10))
+        
+        guide_col1 = (
+            "☝️ 1 Finger: Scroll Next\n"
+            "✌️ 2 Fingers: Scroll Previous\n"
+            "🤟 3 Fingers: Select / Confirm"
+        )
+        guide_col2 = (
+            "🖐️ 5 Fingers: Return Home\n"
+            "✊ Closed Fist: Go Back\n"
+            "🎤 Mic: Say 'Next', 'Select', 'Train'"
+        )
+        g_row = tk.Frame(guide_card, bg="#1e1e2e")
+        g_row.pack(fill=tk.X)
+        tk.Label(g_row, text=guide_col1, font=("Segoe UI", 9), fg="#bac2de", bg="#1e1e2e", justify="left").pack(side=tk.LEFT, expand=True, fill=tk.X)
+        tk.Label(g_row, text=guide_col2, font=("Segoe UI", 9), fg="#bac2de", bg="#1e1e2e", justify="left").pack(side=tk.LEFT, expand=True, fill=tk.X)
+
+        # --- 6. AI ASSISTANT & VOICE BUBBLE ---
+        voice_card = tk.Frame(self.control_frame, bg="#181825")
+        voice_card.pack(fill=tk.X, pady=(4, 0))
+        
+        self.speech_bubble_lbl = tk.Label(
+            voice_card,
+            text="💬 AI Assistant: \"Welcome. I'm ready to guide you.\"",
+            font=("Segoe UI", 9, "italic"),
+            fg="#b4befe", bg="#181825",
+            wraplength=460, justify="left"
+        )
+        self.speech_bubble_lbl.pack(anchor="w")
+        
+        self.mic_bubble_lbl = tk.Label(
+            voice_card,
+            text="🎙️ Microphone: Listening for voice commands",
+            font=("Segoe UI", 9),
+            fg="#a6e3a1", bg="#181825",
+            wraplength=460, justify="left"
+        )
+        self.mic_bubble_lbl.pack(anchor="w", pady=(2, 0))
+
+        # Hidden variables for backwards compatibility with existing callbacks
         self.gesture_class_var = tk.StringVar(value=GESTURES[0])
-        self.gesture_cb = ttk.Combobox(dataset_frame, textvariable=self.gesture_class_var, values=GESTURES, state="readonly")
-        self.gesture_cb.pack(pady=2)
-        
-        # --- NEW DEVELOPER DEBUG PANEL ---
-        debug_frame = tk.Frame(self.control_frame, bg="#2d2d2d", padx=10, pady=10)
-        debug_frame.pack(fill=tk.BOTH, expand=True, pady=10)
-        
-        tk.Label(debug_frame, text="DEVELOPER DEBUG: ON", font=("Consolas", 14, "bold"), fg="#ff4444", bg="#2d2d2d").pack(pady=(0, 10))
-        tk.Label(debug_frame, text="ACCESSIBILITY MODE: ON", font=("Consolas", 12), fg="purple", bg="#2d2d2d").pack()
-        
-        self.state_lbl = tk.Label(debug_frame, text="Current State: STARTUP", font=("Consolas", 12), fg="white", bg="#2d2d2d")
-        self.state_lbl.pack(anchor="w", pady=2)
-        
-        self.sel_lbl = tk.Label(debug_frame, text="Selection: None", font=("Consolas", 12), fg="#aaaaaa", bg="#2d2d2d")
-        self.sel_lbl.pack(anchor="w", pady=2)
-            
-        tk.Frame(debug_frame, height=1, bg="#555555").pack(fill=tk.X, pady=5)
-            
-        self.fin_lbl = tk.Label(debug_frame, text="Fingers: 0", font=("Consolas", 12), fg="#88ff88", bg="#2d2d2d")
-        self.fin_lbl.pack(anchor="w")
-        self.hand_lbl = tk.Label(debug_frame, text="Hand: DETECTED", font=("Consolas", 12), fg="#88ff88", bg="#2d2d2d")
-        self.hand_lbl.pack(anchor="w")
-        self.gest_lbl = tk.Label(debug_frame, text="Gesture: None", font=("Consolas", 12), fg="#88ff88", bg="#2d2d2d")
-        self.gest_lbl.pack(anchor="w")
-        
-        tk.Frame(debug_frame, height=1, bg="#555555").pack(fill=tk.X, pady=5)
-        
-        self.cmd_lbl = tk.Label(debug_frame, text="Last Command: None", font=("Consolas", 12), fg="#ffaa00", bg="#2d2d2d")
-        self.cmd_lbl.pack(anchor="w", pady=2)
-        
-        self.tts_lbl = tk.Label(debug_frame, text="🔊 \"\"", font=("Consolas", 11, "italic"), fg="#aaaaff", bg="#2d2d2d", wraplength=280, justify="left")
-        self.tts_lbl.pack(anchor="w")
+        self.status_label = tk.Label(self.root, text="")
 
-        tk.Button(debug_frame, text="Test Voice", bg="#444466", fg="white", font=("Consolas", 10, "bold"), command=lambda: self.command_engine.say("Hello. This is the Hand Gesture AI voice assistant. I'm using the Neerja neural voice to guide you through the application.")).pack(fill=tk.X, pady=(15, 0))
+        # Dynamic Window resize & sash ratio initialization
+        self.root.bind("<Configure>", self._on_window_configure)
+        self.root.after(150, lambda: self.set_camera_ratio(0.40))
 
-        
+    def set_camera_ratio(self, ratio: float):
+        """Sets the camera width ratio (e.g. 0.40 for 40%) and updates sash & buttons."""
+        self.camera_ratio = max(0.25, min(0.60, ratio))
+        if hasattr(self, 'ratio_slider'):
+            self.ratio_slider.set(int(round(self.camera_ratio * 100)))
+        self._update_ratio_button_styles()
+        self.apply_camera_ratio()
+
+    def on_slider_ratio(self, val):
+        """Callback from Tkinter scale slider."""
+        ratio = float(val) / 100.0
+        self.camera_ratio = max(0.25, min(0.60, ratio))
+        self._update_ratio_button_styles()
+        self.apply_camera_ratio()
+
+    def _update_ratio_button_styles(self):
+        """Highlights the active preset button corresponding to the current ratio."""
+        cur_pct = int(round(self.camera_ratio * 100))
+        btns = [
+            (30, getattr(self, 'ratio_btn_30', None)),
+            (40, getattr(self, 'ratio_btn_40', None)),
+            (50, getattr(self, 'ratio_btn_50', None)),
+        ]
+        for pct, btn in btns:
+            if btn:
+                if abs(cur_pct - pct) <= 2:
+                    btn.config(bg="#89b4fa", fg="#11111b", font=("Segoe UI", 8, "bold"))
+                else:
+                    btn.config(bg="#313244", fg="#cdd6f4", font=("Segoe UI", 8))
+
+    def apply_camera_ratio(self):
+        """Places the PanedWindow sash to match the configured camera width ratio."""
+        if not hasattr(self, 'paned_window'):
+            return
+        total_w = self.paned_window.winfo_width()
+        if total_w < 200:
+            total_w = self.root.winfo_width() - 24
+        if total_w > 200:
+            sash_x = int(total_w * self.camera_ratio)
+            try:
+                self.paned_window.sash_place(0, sash_x, 0)
+            except Exception:
+                pass
+
+    def _on_window_configure(self, event):
+        """Handles window resize events so camera ratio stays consistent."""
+        if event.widget == self.root:
+            w = event.width
+            if hasattr(self, '_last_root_w') and self._last_root_w == w:
+                return
+            self._last_root_w = w
+            self.apply_camera_ratio()
+
     def start_camera_logic(self):
         try:
             self.camera.start()
             self.is_camera_running = True
-            self.status_label.config(text="Status: Camera Running", fg="green")
         except Exception as e:
             print(f"Could not start camera: {e}")
             
@@ -191,7 +402,6 @@ class HandGestureApp:
         self.is_camera_running = False
         self.camera.stop()
         self.video_label.config(image='')
-        self.status_label.config(text="Status: Camera Stopped", fg="red")
 
     def start_recording_logic(self):
         cls_name = self.gesture_class_var.get()
@@ -201,11 +411,9 @@ class HandGestureApp:
         self.collector.stop_recording()
             
     def train_model_logic(self):
-        self.status_label.config(text="Status: Training Model...", fg="orange")
         success = train_gesture_model(message_callback=self.command_engine.say)
         if success:
             self.classifier.load_model()
-        self.root.after(0, lambda: self.status_label.config(text="Status: Ready", fg="blue"))
         return success
         
     def get_missing_samples_logic(self):
@@ -254,11 +462,9 @@ class HandGestureApp:
                 # Check for swipe clear
                 if time.time() - self.display_swipe_time > 1.5:
                     self.display_swipe = None
-                    self.swipe_detector.reset() # clear out temp
+                    self.swipe_detector.reset()
                 
-                # If hands detected
                 landmarks = self.tracker.get_landmarks(frame, hand_no=0)
-                
                 current_state = self.state_manager.get_state()
                 
                 if not landmarks:
@@ -310,17 +516,13 @@ class HandGestureApp:
                         finger_count = 0
                         finger_details = {'thumb': 0, 'index': 0, 'middle': 0, 'ring': 0, 'pinky': 0}
                         
-                    details_str = f"T:{finger_details['thumb']} I:{finger_details['index']} M:{finger_details['middle']} R:{finger_details['ring']} P:{finger_details['pinky']}"
-                    # Just update the new fin_lbl with comprehensive details directly when hands are seen
-                    self.fin_lbl.config(text=f"Fingers: {finger_count} | {details_str}")
-                    cv2.putText(processed_frame, f"Hands: 1 | Detected: YES", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                    cv2.putText(processed_frame, f"Hands: 1 | Fingers: {finger_count}", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
                     
                     if current_state in (ApplicationState.STARTUP, ApplicationState.WAITING_FOR_HAND):
-                        pass # Handled above
+                        pass
                     
                     elif current_state == ApplicationState.DATASET_COLLECTING:
                         current_gesture = "Collecting Mode"
-                        # Automated checking for the active dataset gesture request
                         current_gest = GESTURES[self.command_engine.dataset_gesture_index]
                         
                         if self.finger_detector.check_gesture_match(current_gest, landmarks):
@@ -342,7 +544,6 @@ class HandGestureApp:
                             
                     elif not self.is_recognizing:
                         current_gesture = "Navigation Mode"
-                        # Standard visual finger navigation
                         if finger_count is not None:
                             self.navigation_manager.process_finger_count(finger_count)
                             cv2.putText(processed_frame, f"Fingers: {finger_count}", 
@@ -350,8 +551,6 @@ class HandGestureApp:
                             
                     else:
                         # 3. Recognition Mode ML pipeline
-                        
-                        # A. Swipe Detection
                         pixel_lms = self.tracker.get_pixel_landmarks(frame, hand_no=0)
                         if pixel_lms:
                             wrist_x, wrist_y = pixel_lms[0][1], pixel_lms[0][2]
@@ -359,24 +558,21 @@ class HandGestureApp:
                             if swipe:
                                 self.display_swipe = swipe
                                 self.display_swipe_time = time.time()
-                                # Trigger Command Engine for swipes! (Shares actions, same as UI intent)
                                 if swipe == "swipe_right":
                                     self.on_intent("NEXT")
                                 elif swipe == "swipe_left":
                                     self.on_intent("PREV")
 
-                        # B. Static Gesture Recognition
                         if features is not None:
                             static_gesture, conf = self.classifier.predict(features)
                             
                             if self.display_swipe:
                                 current_gesture = self.display_swipe
-                                current_conf = 1.0  # Temporal event
+                                current_conf = 1.0
                             else:
                                 current_gesture = static_gesture
                                 current_conf = conf
 
-                            # Route static classification to command intent mapped if confidence > 0.8
                             if current_conf > 0.85:
                                 if current_gesture != self.last_ml_gesture:
                                     self.ml_gesture_frames = 0
@@ -396,48 +592,140 @@ class HandGestureApp:
                             cv2.putText(processed_frame, f"{current_gesture} ({current_conf:.2f})", 
                                         (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 255), 3)
 
-                # Update UI Debug Labels
-                self.state_lbl.config(text=f"Current State: {current_state.value}")
+                # --- UPDATE FRIENDLY UI COMPONENTS (Non-Programmer Perspective) ---
                 
-                # Update visual menu selection (compact)
-                if current_state == ApplicationState.MAIN_MENU:
-                    sel = self.command_engine.main_menu_items[self.command_engine.main_menu_index]
-                elif current_state == ApplicationState.DATASET_COLLECTING:
-                    sel = GESTURES[self.command_engine.dataset_gesture_index]
-                elif current_state == ApplicationState.DATASET_MENU:
-                    sel = "Awaiting dataset confirmation"
-                elif current_state == ApplicationState.RECOGNITION:
-                    sel = "In Recognition Mode"
-                elif current_state == ApplicationState.TRAINING:
-                    sel = "Training Model..."
-                elif current_state == ApplicationState.WAITING_FOR_HAND:
-                    sel = "Waiting for hand"
+                # 1. Update Friendly Status Banner
+                if not self.hand_present:
+                    self.status_banner.config(
+                        text="👋 Please hold your hand up in front of the camera",
+                        bg="#45475a", fg="#f9e2af"
+                    )
                 else:
-                    sel = "None"
-                    
-                self.sel_lbl.config(text=f"Selection: {sel}")
+                    if current_state == ApplicationState.DATASET_COLLECTING:
+                        curr_g = GESTURES[self.command_engine.dataset_gesture_index].replace('_', ' ').title()
+                        self.status_banner.config(
+                            text=f"🔴 RECORDING: Hold '{curr_g}' steady ({self.collector.frame_counter}/50 photos)",
+                            bg="#89b4fa", fg="#11111b"
+                        )
+                    elif current_state == ApplicationState.TRAINING:
+                        self.status_banner.config(
+                            text="🧠 AI is learning your gestures... Please wait a moment",
+                            bg="#f9e2af", fg="#11111b"
+                        )
+                    elif current_state == ApplicationState.RECOGNITION:
+                        self.status_banner.config(
+                            text=f"✨ Live Recognition Active! Last Detected: {current_gesture.replace('_', ' ').title()}",
+                            bg="#a6e3a1", fg="#11111b"
+                        )
+                    else:
+                        self.status_banner.config(
+                            text=f"✅ Hand Connected! Showing {finger_count} Finger{'s' if finger_count != 1 else ''}",
+                            bg="#a6e3a1", fg="#11111b"
+                        )
+
+                # 2. Update Interactive Visual Menu Highlights
+                current_sel_item = self.command_engine.main_menu_items[self.command_engine.main_menu_index]
+                for item_name, lbl in self.menu_labels.items():
+                    icon = self.menu_icons.get(item_name, "📌")
+                    if current_state == ApplicationState.MAIN_MENU and item_name == current_sel_item:
+                        # Highlighted active item
+                        lbl.config(
+                            text=f" 👉  {icon}  {item_name}   ◀ (Selected)",
+                            font=("Segoe UI", 10, "bold"),
+                            fg="#89b4fa", bg="#313244"
+                        )
+                    else:
+                        lbl.config(
+                            text=f"     {icon}  {item_name}",
+                            font=("Segoe UI", 10),
+                            fg="#6c7086", bg="#1e1e2e"
+                        )
+
+                # 3. Update Action Explanation Card
+                if current_state == ApplicationState.DATASET_COLLECTING:
+                    opt_info = {
+                        "title": "📁 Dataset Collection in Progress",
+                        "description": "Show the requested gesture clearly to camera. Samples are automatically photographed.",
+                        "trigger": "Make a fist ✊ or say 'Stop Recording' to cancel"
+                    }
+                elif current_state == ApplicationState.RECOGNITION:
+                    opt_info = {
+                        "title": "✨ Live Hand Control Active",
+                        "description": "Swipe your hand left/right or show gestures to control the app.",
+                        "trigger": "Make a fist ✊ or say 'Stop Recognition' to exit to menu"
+                    }
+                else:
+                    opt_info = self.command_engine.get_option_description(current_sel_item)
+
+                self.action_title_lbl.config(text=opt_info["title"])
+                self.action_desc_lbl.config(text=opt_info["description"])
+                self.action_trigger_lbl.config(text=f"👉 {opt_info['trigger']}")
+
+                # 4. Update Speech Bubble and Microphone Status
+                spoken = self.command_engine.last_spoken_text
+                if spoken:
+                    # Truncate if too long for clean display
+                    if len(spoken) > 80:
+                        spoken = spoken[:77] + "..."
+                    self.speech_bubble_lbl.config(text=f"💬 AI Voice: \"{spoken}\"")
                 
-                self.gest_lbl.config(text=f"Detected Gesture: {current_gesture.replace('_', ' ').upper()} ({current_conf*100:.1f}%)")
-                self.hand_lbl.config(text=f"Hand: {'YES' if self.hand_present else 'NO'}", fg="#88ff88" if self.hand_present else "#ff4444")
+                stt_text = self.speech_controller.last_parsed_text
+                if self.voice_assistant.is_speaking:
+                    self.mic_bubble_lbl.config(text="🎙️ Microphone: Paused while AI is talking (prevents echo)", fg="#f9e2af")
+                elif stt_text:
+                    self.mic_bubble_lbl.config(text=f"🎙️ Microphone: Heard \"{stt_text}\"", fg="#a6e3a1")
+                else:
+                    self.mic_bubble_lbl.config(text="🎙️ Microphone: Listening for voice commands...", fg="#a6adc8")
                 
-                # Finger string includes detail info if we want, but old fin_lbl got deleted, so let's check
-                # Actually, wait, finger_count could be a tuple or None if hand_present is False, but we fixed finger_count=0 
-                self.fin_lbl.config(text=f"Fingers: {finger_count}")
-                
-                self.cmd_lbl.config(text=f"Last Command: {self.command_engine.last_intent}")
-                self.tts_lbl.config(text=f"🔊 \"{self.command_engine.last_spoken_text}\"")
-                
-                # Render to Tkinter
-                img_rgb = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
+                # Render Camera to Tkinter with dynamic scaling to match current panel width
+                panel_w = self.video_panel.winfo_width()
+                if panel_w < 100:
+                    panel_w = int(self.root.winfo_width() * self.camera_ratio)
+
+                target_w = max(320, panel_w - 16)
+                orig_h, orig_w = processed_frame.shape[:2]
+                target_h = int(target_w * (orig_h / orig_w))
+
+                panel_h = self.video_panel.winfo_height()
+                if panel_h > 300:
+                    max_h = max(240, panel_h - 170)
+                    if target_h > max_h:
+                        target_h = max_h
+                        target_w = int(target_h * (orig_w / orig_h))
+
+                disp_frame = cv2.resize(
+                    processed_frame,
+                    (target_w, target_h),
+                    interpolation=cv2.INTER_AREA if target_w < orig_w else cv2.INTER_LINEAR
+                )
+
+                img_rgb = cv2.cvtColor(disp_frame, cv2.COLOR_BGR2RGB)
                 img_pil = Image.fromarray(img_rgb)
                 img_tk = ImageTk.PhotoImage(image=img_pil)
                 self.video_label.imgtk = img_tk
                 self.video_label.config(image=img_tk)
+
+                if hasattr(self, 'cam_tip_text'):
+                    self.cam_tip_text.config(wraplength=max(220, panel_w - 30))
+
+                ctrl_w = self.control_frame.winfo_width()
+                if ctrl_w > 100:
+                    dyn_wrap = max(360, ctrl_w - 40)
+                    if hasattr(self, 'status_banner'):
+                        self.status_banner.config(wraplength=dyn_wrap)
+                    if hasattr(self, 'action_desc_lbl'):
+                        self.action_desc_lbl.config(wraplength=dyn_wrap)
+                    if hasattr(self, 'speech_bubble_lbl'):
+                        self.speech_bubble_lbl.config(wraplength=dyn_wrap)
+                    if hasattr(self, 'mic_bubble_lbl'):
+                        self.mic_bubble_lbl.config(wraplength=dyn_wrap)
                 
-        # Schedule next update
         self.root.after(33, self.update_loop)
+
         
     def on_close(self):
+        if hasattr(self, 'speech_controller') and self.speech_controller:
+            self.speech_controller.stop_listening()
         self.camera.stop()
         self.root.destroy()
 

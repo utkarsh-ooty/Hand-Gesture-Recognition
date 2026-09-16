@@ -4,22 +4,35 @@ import time
 import os
 import platform
 import asyncio
+import uuid
+import tempfile
 
 class VoiceAssistant:
     def __init__(self):
         self.speech_queue = queue.Queue()
+        self._is_speaking = False
+        self._lock = threading.Lock()
         self.worker_thread = threading.Thread(target=self._speech_worker, daemon=True)
         self.worker_thread.start()
 
+    @property
+    def is_speaking(self) -> bool:
+        with self._lock:
+            return self._is_speaking
+
+    def _set_speaking(self, val: bool):
+        with self._lock:
+            self._is_speaking = val
+
     def _play_mp3(self, file_path):
-        import ctypes
-        # Native Windows Media Foundation play to skip external python dependencies 
-        ctypes.windll.winmm.mciSendStringW(f'open "{file_path}" type mpegvideo alias myaudio', None, 0, None)
-        ctypes.windll.winmm.mciSendStringW('play myaudio wait', None, 0, None)
-        ctypes.windll.winmm.mciSendStringW('close myaudio', None, 0, None)
+        if platform.system() == "Windows":
+            import ctypes
+            alias = f"myaudio_{uuid.uuid4().hex[:8]}"
+            ctypes.windll.winmm.mciSendStringW(f'open "{file_path}" type mpegvideo alias {alias}', None, 0, None)
+            ctypes.windll.winmm.mciSendStringW(f'play {alias} wait', None, 0, None)
+            ctypes.windll.winmm.mciSendStringW(f'close {alias}', None, 0, None)
 
     def _speech_worker(self):
-        # We handle async execution here cleanly inside the dedicated thread
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
@@ -35,18 +48,32 @@ class VoiceAssistant:
                 except queue.Empty:
                     break
                     
+            if not text or not text.strip():
+                continue
+
+            self._set_speaking(True)
+            temp_file = None
             try:
                 import edge_tts
-                temp_file = os.path.abspath("temp_voice.mp3")
+                temp_dir = tempfile.gettempdir()
+                filename = f"voice_{uuid.uuid4().hex[:8]}.mp3"
+                temp_file = os.path.abspath(os.path.join(temp_dir, filename))
+                
                 communicate = edge_tts.Communicate(text, "en-IN-NeerjaNeural")
                 loop.run_until_complete(communicate.save(temp_file))
                 
-                # Verify rendering worked
                 if os.path.exists(temp_file):
                     self._play_mp3(temp_file)
             except Exception as eval_e:
-                print(f"Edge-TTS saying error: {eval_e}. Falling back to default.")
+                print(f"[VoiceAssistant] Edge-TTS error: {eval_e}. Falling back to SAPI/pyttsx3.")
                 self._fallback_sapi(text)
+            finally:
+                self._set_speaking(False)
+                if temp_file and os.path.exists(temp_file):
+                    try:
+                        os.remove(temp_file)
+                    except Exception:
+                        pass
 
     def _fallback_sapi(self, text):
         try:
@@ -56,8 +83,17 @@ class VoiceAssistant:
             import win32com.client
             speaker = win32com.client.Dispatch("SAPI.SpVoice")
             speaker.Speak(text)
+            return
         except Exception as e:
-            print(f"SAPI Fallback failed: {e}")
+            print(f"[VoiceAssistant] SAPI Fallback failed: {e}")
+
+        try:
+            import pyttsx3
+            engine = pyttsx3.init()
+            engine.say(text)
+            engine.runAndWait()
+        except Exception as e:
+            print(f"[VoiceAssistant] pyttsx3 Fallback failed: {e}")
 
     def speak(self, text: str):
         """Adds text to the queue without blocking the main Application."""
@@ -70,3 +106,4 @@ class VoiceAssistant:
                 self.speech_queue.get_nowait()
             except queue.Empty:
                 break
+

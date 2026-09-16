@@ -25,11 +25,68 @@ class CommandEngine:
         self.tts.speak(message)
 
     def process_intent(self, intent: str, payload: str = None):
-        """Processes intents (NEXT, PREV, SELECT, BACK, HOME, HELP) across different states."""
+        """Processes intents (NEXT, PREV, SELECT, BACK, HOME, HELP, voice direct controls) across different states."""
         self.last_intent = intent
         state = self.state_manager.get_state()
-        print(f"[CommandEngine] Processing Intent: {intent} at State: {state}")
+        print(f"[CommandEngine] Processing Intent: {intent} (payload={payload}) at State: {state}")
         
+        # --- Direct Global Voice Commands ---
+        if intent == "START_CAMERA":
+            self.app_callbacks.get("start_camera")()
+            self.say("Camera started.")
+            return
+        elif intent == "STOP_CAMERA":
+            self.app_callbacks.get("stop_camera")()
+            self.say("Camera stopped.")
+            return
+        elif intent == "WIDER_CAMERA":
+            fn = self.app_callbacks.get("adjust_camera_size")
+            if fn:
+                fn(0.05)
+            self.say("Camera view widened.")
+            return
+        elif intent == "SMALLER_CAMERA":
+            fn = self.app_callbacks.get("adjust_camera_size")
+            if fn:
+                fn(-0.05)
+            self.say("Camera view narrowed.")
+            return
+        elif intent == "RESET_CAMERA":
+            fn = self.app_callbacks.get("set_camera_ratio")
+            if fn:
+                fn(0.40)
+            self.say("Camera view reset to 40 percent.")
+            return
+        elif intent == "EXIT":
+            self._execute_main_menu_selection("Exit")
+            return
+        elif intent == "REPEAT":
+            if self.last_spoken_text:
+                self.say(f"Repeating: {self.last_spoken_text}")
+            else:
+                self.say("Nothing to repeat.")
+            return
+        elif intent == "SELECT_DATASET_COLLECTION":
+            self._execute_main_menu_selection("Dataset Collection")
+            return
+        elif intent == "TRAIN_MODEL":
+            self._execute_main_menu_selection("Model Training")
+            return
+        elif intent == "START_RECOGNITION":
+            self._execute_main_menu_selection("Recognition")
+            return
+        elif intent == "STOP_RECOGNITION":
+            if state == ApplicationState.RECOGNITION:
+                self.app_callbacks.get("stop_recognition")()
+                self.state_manager.set_state(ApplicationState.MAIN_MENU)
+                self.say("Recognition stopped. Returned to main menu.")
+            return
+        elif intent == "SELECT_GESTURE" and payload:
+            self.app_callbacks.get("select_gesture")(payload)
+            pretty = payload.replace('_', ' ').title()
+            self.say(f"Selected {pretty} gesture.")
+            return
+
         if intent == "HOME":
             if state != ApplicationState.MAIN_MENU:
                 self.say("Navigating home.")
@@ -42,6 +99,11 @@ class CommandEngine:
         if intent == "HELP":
             self._handle_help(state)
             return
+
+        if intent == "YES":
+            intent = "SELECT"
+        elif intent == "NO":
+            intent = "BACK"
 
         if state == ApplicationState.STARTUP or state == ApplicationState.WAITING_FOR_HAND:
             # First interaction moves us to the main menu
@@ -186,6 +248,49 @@ class CommandEngine:
             self.state_manager.set_state(ApplicationState.MAIN_MENU)
             self.say("Dataset collection is fully complete. All required gesture samples have been saved. Returning to main menu.")
 
+    def get_option_description(self, selection: str = None) -> dict:
+        """Returns title, description, and trigger instructions for any menu selection."""
+        if selection is None:
+            selection = self.main_menu_items[self.main_menu_index]
+
+        desc_map = {
+            "Dataset Collection": {
+                "title": "📁 Dataset Collection",
+                "description": "Records 50 camera sample frames for each hand gesture (Open Palm, Fist, Thumbs Up/Down, Swipes) to build your custom AI dataset.",
+                "trigger": "Show 3 fingers 🤟 OR say 'Select' / 'Dataset Collection'"
+            },
+            "Model Training": {
+                "title": "🧠 Model Training",
+                "description": "Trains a Machine Learning model (Random Forest) on your collected keypoint samples so the camera can classify your gestures in real-time.",
+                "trigger": "Show 3 fingers 🤟 OR say 'Select' / 'Train Model'"
+            },
+            "Recognition": {
+                "title": "✨ Live ML Recognition",
+                "description": "Activates live ML hand gesture control. Perform trained static gestures or swipe left/right in front of your camera to navigate.",
+                "trigger": "Show 3 fingers 🤟 OR say 'Select' / 'Start Recognition'"
+            },
+            "Settings": {
+                "title": "⚙️ Settings",
+                "description": "Adjust accessibility voice speed, camera index, or recognition thresholds.",
+                "trigger": "Show 3 fingers 🤟 OR say 'Select'"
+            },
+            "Help": {
+                "title": "❓ Instructions & Help",
+                "description": "Reads out complete voice and hand gesture control instructions.",
+                "trigger": "Show 4 fingers 🖐️ OR say 'Help'"
+            },
+            "Exit": {
+                "title": "🚪 Exit Application",
+                "description": "Closes camera stream, turns off voice listening, and exits the application cleanly.",
+                "trigger": "Show 3 fingers 🤟 OR say 'Select' / 'Exit'"
+            }
+        }
+        return desc_map.get(selection, {
+            "title": f"📌 {selection}",
+            "description": f"Perform actions related to {selection}.",
+            "trigger": "Show 3 fingers 🤟 OR say 'Select'"
+        })
+
     def _handle_help(self, state: ApplicationState):
         if state == ApplicationState.MAIN_MENU:
             self.say("Help. One finger moves to the next option. Two fingers move to the previous option. Three fingers selects. Five fingers returns home. A closed fist goes back.")
@@ -198,3 +303,4 @@ class CommandEngine:
             self.say("Help. You are in ML recognition mode. Swipes trigger next and previous. Closed fist goes back.")
         else:
             self.say("Help. One finger for Next. Two fingers for Previous. Three for Select. Fist to go back. Five to go Home.")
+
