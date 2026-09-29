@@ -2,9 +2,9 @@ import os
 import sys
 import platform
 
-# Suppress MediaPipe & TensorFlow C++ warning noise
-os.environ["GLOG_minloglevel"] = "2"
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+# Suppress MediaPipe & TensorFlow C++ warning and error noise (including clearcut telemetry)
+os.environ["GLOG_minloglevel"] = "3"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
 # Set working directory to the directory where this script resides
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
