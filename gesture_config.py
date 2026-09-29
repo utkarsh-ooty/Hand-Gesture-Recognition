@@ -5,9 +5,7 @@ GESTURES = [
     "open_palm",
     "closed_fist",
     "thumbs_up",
-    "thumbs_down",
-    "swipe_left",
-    "swipe_right"
+    "thumbs_down"
 ]
 
 # Bootstrap finger navigation mapping (0 to 5 fingers extended)

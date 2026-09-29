@@ -57,6 +57,30 @@ class FingerDetector:
             'pinky': fingers_extended[4]
         }
         
+    def get_navigation_token(self, landmarks, handedness="Right"):
+        """Returns semantic token: 1_FINGER, 2_FINGERS, THUMBS_UP, THUMBS_DOWN"""
+        result = self.count_fingers(landmarks, handedness)
+        if not result:
+            return None
+            
+        count, details = result
+        
+        if count == 1 and details['index'] == 1:
+            return "1_FINGER"
+            
+        if count == 2 and details['index'] == 1 and details['middle'] == 1:
+            return "2_FINGERS"
+            
+        if count == 1 and details['thumb'] == 1:
+            wrist = landmarks[0]
+            thumb_tip = landmarks[4]
+            if thumb_tip[2] < wrist[2]:
+                return "THUMBS_UP"
+            else:
+                return "THUMBS_DOWN"
+                
+        return None
+        
     def check_gesture_match(self, gesture_name, landmarks):
         """Returns True if the landmarks somewhat resemble the requested gesture class."""
         if not landmarks or len(landmarks) < 21:
@@ -81,8 +105,5 @@ class FingerDetector:
             wrist = landmarks[0]
             thumb_tip = landmarks[4]
             return count == 1 and thumb_tip[2] > wrist[2]
-        elif gesture_name == "swipe_left" or gesture_name == "swipe_right":
-            # Dynamic gestures just need a hand to be present
-            return True
             
         return False
