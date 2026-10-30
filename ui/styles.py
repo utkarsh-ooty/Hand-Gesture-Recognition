@@ -1,0 +1,37 @@
+"""
+Design tokens, color palette, and typography for accessible UI.
+"""
+
+from app.config import Config
+
+# Theme colors
+BG_DARK = Config.BG_DARK
+BG_PANEL = Config.BG_PANEL
+BG_CARD = Config.BG_CARD
+BG_FOCUS = Config.BG_FOCUS
+
+FG_PRIMARY = Config.FG_PRIMARY
+FG_SECONDARY = Config.FG_SECONDARY
+FG_ACCENT = Config.FG_ACCENT
+FG_WARN = Config.FG_WARN
+FG_SUCCESS = Config.FG_SUCCESS
+FG_ERROR = Config.FG_ERROR
+
+# High-visibility colors for status alerts
+BG_ALERT_INTERRUPT = "#7C3AED"
+BG_ALERT_SUCCESS = "#065F46"
+FG_VOICE_BUBBLE = "#A78BFA"
+
+# Typography
+FONT_FAMILY = Config.FONT_FAMILY
+FONT_APP_TITLE = (FONT_FAMILY, 18, "bold")
+FONT_SECTION_TITLE = (FONT_FAMILY, 12, "bold")
+FONT_BANNER = (FONT_FAMILY, 12, "bold")
+FONT_MENU_ITEM = (FONT_FAMILY, 13)
+FONT_MENU_ITEM_FOCUSED = (FONT_FAMILY, 14, "bold")
+FONT_DESC_TITLE = (FONT_FAMILY, 13, "bold")
+FONT_DESC_BODY = (FONT_FAMILY, 10)
+FONT_VOICE = (FONT_FAMILY, 10, "italic")
+FONT_LEGEND_TITLE = (FONT_FAMILY, 10, "bold")
+FONT_LEGEND_BODY = (FONT_FAMILY, 9)
+FONT_STATUS_SMALL = (FONT_FAMILY, 9)
